@@ -8,6 +8,7 @@ from langchain.agents import AgentExecutor
 from langchain.tools.retriever import create_retriever_tool
 from langchain import hub
 from github import fetch_github_issues
+from note import note_tool
 
 load_dotenv()
 
@@ -24,7 +25,7 @@ def connect_to_vstore():
 
 
     vstore = AstraDBVectorStore(
-        embeddings=embeddings,
+        embedding=embeddings,
         collection_name="github",
         api_endpoint=ASTRA_DB_API_ENDPOINT,
         token=ASTRA_DB_APPLICATION_TOKEN,
@@ -37,7 +38,7 @@ add_to_vectorstore = input("Add to vectorstore? (y/n): ").lower() in ["y", "yes"
 if add_to_vectorstore:
     owner = "SeleniumHQ"
     repo = "selenium"
-    issues = fetch_github_issues(owner, repo)
+    issues = fetch_github_issues(owner=owner, repo=repo)
 
     try:
         vstore.delete_collection()
@@ -45,8 +46,30 @@ if add_to_vectorstore:
         pass
 
     vstore = connect_to_vstore()
-    vstore.add_documents(issues)
+    
+    # Add documents with error handling for large documents
+    successful_docs = 0
+    skipped_docs = 0
+    for issue in issues:
+        try:
+            vstore.add_documents([issue])
+            successful_docs += 1
+        except Exception as e:
+            print(f"Error adding document: {e}")
+            skipped_docs += 1
+    
+    print(f"Added {successful_docs} documents, skipped {skipped_docs} documents")
 
-results = vstore.similarity_search("webdriver", k=3)
-for res in results:
-    print(f"* {res.page_content} {res.metadata}")
+retriever = vstore.as_retriever(search_kwargs={"k": 3})
+retriever_tool = create_retriever_tool(retriever, name="github", description="Search Github issues")
+
+prompt = hub.pull("hwchase17/openai-functions-agent")
+llm = ChatOpenAI()
+
+tools = [retriever_tool, note_tool]
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+while(question := input("Ask about github issues (q to quit): ")) != "q":
+    result = agent_executor.invoke({"input": question})
+    print(result["output"])

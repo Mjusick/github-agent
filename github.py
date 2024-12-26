@@ -13,7 +13,7 @@ def fetch_github(owner, repo, endpoint):
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         data = response.json()
-        print(data)
+        print(f"Fetched data from GitHub: {data}")
         return data
     else:
         print(f"Error fetching data from GitHub: {response.status_code}")
@@ -39,6 +39,6 @@ def load_issues(issues):
 
 
 def fetch_github_issues(owner, repo):
-    data = fetch_github(owner, repo, "issues")
-    issues = load_issues(data)
+    data = fetch_github(owner=owner, repo=repo, endpoint="issues")
+    issues = load_issues(issues=data)
     return issues
